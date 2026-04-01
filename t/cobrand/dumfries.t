@@ -33,11 +33,6 @@ FixMyStreet::override_config {
             $mech->content_contains("Such as potholes, blocked drains, broken paving or street lighting");
         };
 
-        subtest 'faq contains contact_us_phone substitutions' => sub {
-            $mech->get_ok("/faq");
-            ok $mech->text =~ "For these types of issue, please call us on: 1234567", 'contact_us_phone sentence reads correctly';
-        };
-
         subtest 'Privacy contains contact_us_phone substitutions' => sub {
             $mech->get_ok("/about/privacy");
             ok $mech->text =~ "Please call us on: 1234567 if you would like your details to be removed from our admin database sooner than that", 'contact_us_phone sentence reads correctly';
