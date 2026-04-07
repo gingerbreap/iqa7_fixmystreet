@@ -15,7 +15,13 @@ BEGIN {
 }
 
 use Getopt::Long::Descriptive;
-use FixMyStreet::Script::ProcessReportFile;
+use DateTime;
+use DateTime::Format::W3CDTF;
+use JSON::MaybeXS;
+use Path::Tiny;
+
+use FixMyStreet::DB;
+use Open311::GetServiceRequests;
 
 my ($opts, $usage) = describe_options(
     '%c %o',
@@ -27,12 +33,29 @@ my ($opts, $usage) = describe_options(
 );
 $usage->die if $opts->help;
 
-my %params = (
-    commit => $opts->commit,
-    verbose => $opts->verbose,
-    body_name => $opts->body,
-    file => $opts->file,
-);
+my $body = FixMyStreet::DB->resultset('Body')->find({ name => $opts->body });
+die "Problem loading body\n" unless $body;
 
-my $p = FixMyStreet::Script::ProcessReportFile->new( %params );
-$p->process;
+my $string = path( $opts->file )->slurp_utf8;
+my $data = JSON::MaybeXS->new( utf8 => 1 )->decode($string);
+
+print "Dry run, not adding reports. Use --commit to add\n" unless $opts->commit;
+
+my $start_date = DateTime::Format::W3CDTF->parse_datetime('2010-01-01T00:00:00Z');
+my $end_date = DateTime->now( time_zone => 'UTC' );
+
+my $reports = Open311::GetServiceRequests->new(
+    verbose         => $opts->verbose,
+    commit          => $opts->commit,
+    start_date      => $start_date,
+    end_date        => $end_date,
+    convert_latlong => $body->convert_latlong,
+    system_user     => $body->comment_user,
+);
+my $o = $reports->create_open311_object($body);
+my $fmt = DateTime::Format::W3CDTF->new;
+my $args = {
+    start_date => $fmt->format_datetime( $start_date->clone->set_time_zone('UTC') ),
+    end_date   => $fmt->format_datetime( $end_date->clone->set_time_zone('UTC') ),
+};
+$reports->create_problems( $o, $body, $args, $data );

@@ -49,7 +49,9 @@ server {
     location @catalyst {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header Host $host:8000;
+        # Match BASE_URL in general.yml-docker so server-side MapIt (LWP from fixmystreet container → nginx)
+        # does not send Host nginx.svc:8000 and get an HTML error from Catalyst.
+        proxy_set_header Host localhost:8000;
         proxy_redirect off;
         proxy_pass http://fixmystreet.svc:9000;
     }

@@ -1,0 +1,37 @@
+[
+   {
+      "description" : "Site inspection has been scheduled for the road surface issue",
+      "fixmystreet_id" : 1,
+      "status" : "open",
+      "update_id" : "csv-527fa3254cc5c65617c2b403c5d691a4",
+      "updated_datetime" : "2026-04-02T16:06:24Z"
+   },
+   {
+      "description" : "This issue has been assigned to the maintenance team",
+      "fixmystreet_id" : 2,
+      "status" : "open",
+      "update_id" : "csv-8c5e5f6bf0f0065ea295bf9ad01a313b",
+      "updated_datetime" : "2026-04-02T16:06:24Z"
+   },
+   {
+      "description" : "Please provide additional photos so we can continue processing",
+      "fixmystreet_id" : 3,
+      "status" : "open",
+      "update_id" : "csv-86c6048504005b39cd0480f5b288c9bd",
+      "updated_datetime" : "2026-04-02T16:06:24Z"
+   },
+   {
+      "description" : "Repair is expected to be completed within two days",
+      "fixmystreet_id" : 4,
+      "status" : "open",
+      "update_id" : "csv-21619ab33b6f12af8a6bd8ec13a43c85",
+      "updated_datetime" : "2026-04-02T16:06:24Z"
+   },
+   {
+      "description" : "This location is outside our responsibility and has been forwarded",
+      "fixmystreet_id" : 5,
+      "status" : "open",
+      "update_id" : "csv-968b365ef73e5a5a3ac361a452ae7e5e",
+      "updated_datetime" : "2026-04-02T16:06:24Z"
+   }
+]

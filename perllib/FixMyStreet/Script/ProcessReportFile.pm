@@ -33,14 +33,15 @@ has body => (
 
 has start_date => (
     is => 'rw',
-    default => '2010-01-01T00:00:00Z',
+    default => sub {
+        DateTime::Format::W3CDTF->parse_datetime('2010-01-01T00:00:00Z');
+    },
 );
 
 has end_date => (
     is => 'rw',
     default => sub {
-        my $formatter = DateTime::Format::W3CDTF->new;
-        return $formatter->format_datetime(DateTime->now);
+        DateTime->now( time_zone => 'UTC' );
     },
 );
 
@@ -72,9 +73,10 @@ sub process {
         system_user => $self->body->comment_user,
     );
     my $o = $reports->create_open311_object( $self->body );
+    my $fmt = DateTime::Format::W3CDTF->new;
     my $args = {
-        start_date => $self->start_date,
-        end_date => $self->end_date,
+        start_date => $fmt->format_datetime( $self->start_date->clone->set_time_zone('UTC') ),
+        end_date   => $fmt->format_datetime( $self->end_date->clone->set_time_zone('UTC') ),
     };
     $reports->create_problems( $o, $self->body, $args, $self->data );
 }
