@@ -1,0 +1,175 @@
+#!/usr/bin/env perl
+#
+# Convert CSV(reference, comment) to Open311 updates JSON and optionally
+# import via process_update_file.
+
+use strict;
+use warnings;
+use v5.14;
+
+BEGIN {
+    use File::Basename qw(dirname);
+    use File::Spec;
+    my $d = dirname(File::Spec->rel2abs($0));
+    require "$d/../../setenv.pl";
+}
+
+use Digest::MD5 qw(md5_hex);
+use Encode qw(encode);
+use File::Spec;
+use File::Temp qw(tempfile);
+use Getopt::Long::Descriptive;
+use JSON::MaybeXS;
+use Text::CSV;
+use Time::Piece;
+
+my ($opts, $usage) = describe_options(
+    '%c %o',
+    [ 'file|f=s', 'input CSV file path', { required => 1 } ],
+    [ 'body|b=s', 'FixMyStreet body name for process_update_file', { required => 1 } ],
+    [ 'reference-column=s', 'CSV header for reference ID', { default => 'reference' } ],
+    [ 'comment-column=s', 'CSV header for comment text', { default => 'comment' } ],
+    [ 'datetime-column=s', 'optional CSV header for updated_datetime (W3C format)' ],
+    [ 'reference-type=s', 'target key: service_request_id or fixmystreet_id', { default => 'service_request_id' } ],
+    [ 'status=s', 'status for generated updates', { default => 'open' } ],
+    [ 'allow-empty-comment', 'allow rows with blank comment' ],
+    [ 'keep-json=s', 'write JSON to this path (defaults to temp file)' ],
+    [ 'no-run', 'only generate JSON, do not call process_update_file' ],
+    [ 'commit|c', 'pass --commit to process_update_file' ],
+    [ 'suppress_alerts|s', 'pass --suppress_alerts to process_update_file' ],
+    [ 'verbose|v', 'verbose output' ],
+    [ 'help|h', 'print usage message and exit' ],
+);
+$usage->die if $opts->help;
+
+die "--reference-type must be service_request_id or fixmystreet_id\n"
+    unless $opts->reference_type eq 'service_request_id'
+        || $opts->reference_type eq 'fixmystreet_id';
+
+open my $fh, '<:encoding(utf-8)', $opts->file
+    or die "Failed to open CSV file $opts->file: $!\n";
+
+my $csv = Text::CSV->new({
+    binary => 1,
+    auto_diag => 1,
+});
+
+my $headers = $csv->getline($fh);
+die "CSV appears to be empty\n" unless $headers && @$headers;
+$csv->column_names(@$headers);
+
+my %header_exists = map { $_ => 1 } @$headers;
+die "Missing required column '$opts->{reference_column}' in CSV header\n"
+    unless $header_exists{$opts->reference_column};
+die "Missing required column '$opts->{comment_column}' in CSV header\n"
+    unless $header_exists{$opts->comment_column};
+if ($opts->datetime_column) {
+    die "Missing datetime column '$opts->{datetime_column}' in CSV header\n"
+        unless $header_exists{$opts->datetime_column};
+}
+
+my @updates;
+my $row_num = 1; # header
+my $skipped = 0;
+
+while (my $row = $csv->getline_hr($fh)) {
+    $row_num++;
+    my $reference = defined $row->{$opts->reference_column} ? $row->{$opts->reference_column} : '';
+    my $comment   = defined $row->{$opts->comment_column} ? $row->{$opts->comment_column} : '';
+
+    $reference =~ s/^\s+|\s+$//g;
+    $comment =~ s/^\s+|\s+$//g;
+
+    unless (length $reference) {
+        warn "Skipping row $row_num: blank reference\n" if $opts->verbose;
+        $skipped++;
+        next;
+    }
+    unless ($opts->allow_empty_comment || length $comment) {
+        warn "Skipping row $row_num: blank comment\n" if $opts->verbose;
+        $skipped++;
+        next;
+    }
+
+    if ($opts->reference_type eq 'fixmystreet_id' && $reference !~ /^\d+$/) {
+        warn "Skipping row $row_num: fixmystreet_id must be numeric, got '$reference'\n";
+        $skipped++;
+        next;
+    }
+
+    my $updated_datetime;
+    if ($opts->datetime_column) {
+        $updated_datetime = $row->{$opts->datetime_column} // '';
+        $updated_datetime =~ s/^\s+|\s+$//g;
+        if (!length $updated_datetime) {
+            warn "Skipping row $row_num: blank datetime in '$opts->{datetime_column}'\n" if $opts->verbose;
+            $skipped++;
+            next;
+        }
+    } else {
+        $updated_datetime = gmtime->strftime('%Y-%m-%dT%H:%M:%SZ');
+    }
+
+    my $fingerprint = join "\x1E", ($reference, $comment, $updated_datetime, $row_num);
+    my $update_id = 'csv-' . md5_hex(encode('UTF-8', $fingerprint));
+
+    my %update = (
+        update_id => $update_id,
+        status => $opts->status,
+        description => $comment,
+        updated_datetime => $updated_datetime,
+        $opts->reference_type => $reference,
+    );
+
+    push @updates, \%update;
+}
+close $fh;
+
+die "No valid rows found in CSV; nothing to do\n" unless @updates;
+
+my $json_encoder = JSON::MaybeXS->new(utf8 => 1, pretty => 1, canonical => 1);
+my $json_content = $json_encoder->encode(\@updates);
+
+my $json_path;
+my $temp_fh;
+if ($opts->keep_json) {
+    $json_path = $opts->keep_json;
+    open my $out, '>:encoding(utf-8)', $json_path
+        or die "Failed to write JSON file $json_path: $!\n";
+    print {$out} $json_content;
+    close $out;
+} else {
+    my ($tfh, $tpath) = tempfile('fms-updates-XXXXXX', SUFFIX => '.json', UNLINK => 0);
+    binmode $tfh, ':encoding(utf-8)';
+    print {$tfh} $json_content;
+    close $tfh;
+    $temp_fh = $tfh;
+    $json_path = $tpath;
+}
+
+say "Prepared " . scalar(@updates) . " updates (skipped $skipped rows)";
+say "JSON file: $json_path";
+
+if ($opts->no_run) {
+    say "--no-run set; not calling process_update_file";
+    exit 0;
+}
+
+my $script_path = File::Spec->catfile(dirname(File::Spec->rel2abs($0)), 'process_update_file');
+my @cmd = (
+    $script_path,
+    '--file', $json_path,
+    '--body', $opts->body,
+);
+push @cmd, '--commit' if $opts->commit;
+push @cmd, '--suppress_alerts' if $opts->suppress_alerts;
+push @cmd, '--verbose' if $opts->verbose;
+
+say "Running: @cmd";
+my $rc = system(@cmd);
+if ($rc != 0) {
+    my $exit_code = $rc >> 8;
+    die "process_update_file failed with exit code $exit_code\n";
+}
+
+say "Import finished successfully";

@@ -23,6 +23,15 @@ services:
     stop_signal: SIGRTMIN+3
     volumes:
       - ./conf/general.yml-docker:/var/www/fixmystreet/fixmystreet/conf/general.yml
+      # Host bin: stable image omits some scripts (e.g. process_report_file).
+      - ./bin/fixmystreet.com:/var/www/fixmystreet/fixmystreet/bin/fixmystreet.com:ro
+      # Stable image ships older Open311::GetServiceRequests: create_problems() always HTTP-fetches and
+      # ignores JSON passed from process_report_file (fourth arg). Mount only this module — not all of
+      # perllib — so file import works without risking a full master/image API mismatch on /admin.
+      - ./perllib/Open311/GetServiceRequests.pm:/var/www/fixmystreet/fixmystreet/perllib/Open311/GetServiceRequests.pm:ro
+      # Do NOT mount ./perllib by default: host master can mismatch stable image and break /admin (500,
+      # "Please come back later"). For other one-off .pm updates, docker cp that file only, or uncomment:
+      # - ./perllib:/var/www/fixmystreet/fixmystreet/perllib:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - type: tmpfs
         target: /run
